@@ -258,6 +258,52 @@ a.active {
     color: #e58080;
 }
 
+/* Tab Groups Styling */
+.tab-group-header {
+    margin: 10px 0 5px 0;
+    border-bottom: 1px solid #e0e0e0;
+    padding-bottom: 3px;
+}
+
+.tab-group-title {
+    font-weight: 500;
+    font-size: 14px;
+    color: #444;
+    display: flex;
+    align-items: center;
+}
+
+.tab-group-color {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    margin-left: 8px;
+    border: 1px solid #ccc;
+}
+
+.tab-group-collapsed {
+    font-style: italic;
+    font-weight: 300;
+    color: #666;
+    font-size: 12px;
+}
+
+.tab-in-group {
+    margin-left: 20px;
+    position: relative;
+}
+
+.tab-in-group::before {
+    content: '';
+    position: absolute;
+    left: -15px;
+    top: 8px;
+    width: 8px;
+    height: 1px;
+    background-color: #ccc;
+}
+
 #banner {
     display: none;
     position: fixed;

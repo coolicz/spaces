@@ -22,13 +22,21 @@ Isn't this essentially just bookmarks with folders? Yeah, pretty much - but who 
 
 ### Chrome Web Store
 
-Spaces is also [available via the official Chrome Web Store](https://chrome.google.com/webstore/detail/spaces/cenkmofngpohdnkbjdpilgpmbiiljjim).
+~~Spaces is also [available via the official Chrome Web Store](https://chrome.google.com/webstore/detail/spaces/cenkmofngpohdnkbjdpilgpmbiiljjim).~~
 
 Please note that the webstore version may be behind the latest version here.
 
+### Chrome Web Store
+
+This extension has been migrated to manifest v3 in order to be compatible with modern Chrome versions.
+
+### Tab groups support
+
+Along with manifest v3 migration, [Tab groups](https://blog.google/products/chrome/manage-tabs-with-google-chrome/) support has been added.
+
 ### Install as an extension from source
 
-1. Download the **[latest available version](https://github.com/deanoemcke/spaces/archive/v1.1.1.zip)** 
+1. Download the **[latest available version](https://github.com/coolicz/spaces/archive/refs/heads/master.zip)** 
 2. Unarchive to your preferred location (e.g., `Downloads`).
 2. In **Google Chrome**, navigate to [chrome://extensions/](chrome://extensions/) and enable <kbd>Developer mode</kbd> in the upper right corner.
 3. Click on the <kbd>LOAD UNPACKED</kbd> button.

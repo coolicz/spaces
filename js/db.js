@@ -1,11 +1,11 @@
 //The MIT License
 //Copyright (c) 2012 Aaron Powell
 
-(function(window, undefined) {
+(function(globalContext, undefined) {
     'use strict';
 
     var indexedDB,
-        IDBKeyRange = window.IDBKeyRange || window.webkitIDBKeyRange,
+        IDBKeyRange = globalContext.IDBKeyRange || globalContext.webkitIDBKeyRange,
         transactionModes = {
             readonly: 'readonly',
             readwrite: 'readwrite',
@@ -16,11 +16,11 @@
     var getIndexedDB = function() {
         if (!indexedDB) {
             indexedDB =
-                window.indexedDB ||
-                window.webkitIndexedDB ||
-                window.mozIndexedDB ||
-                window.oIndexedDB ||
-                window.msIndexedDB;
+                globalContext.indexedDB ||
+                globalContext.webkitIndexedDB ||
+                globalContext.mozIndexedDB ||
+                globalContext.oIndexedDB ||
+                globalContext.msIndexedDB;
 
             if (!indexedDB) {
                 throw 'IndexedDB required';
@@ -603,6 +603,6 @@
             return db;
         });
     } else {
-        window.db = db;
+        globalContext.db = db;
     }
-})(window);
+})(typeof self !== 'undefined' ? self : window);
