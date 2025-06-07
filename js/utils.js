@@ -1,22 +1,23 @@
-/* global chrome  */
-// eslint-disable-next-line no-var, no-unused-vars
+'use strict';
+
 var utils = {
-    getHashVariable: (key, urlStr) => {
-        const valuesByKey = {};
-        const keyPairRegEx = /^(.+)=(.+)/;
+    getHashVariable: function(key, urlStr) {
+        var valuesByKey = {},
+            keyPairRegEx = /^(.+)=(.+)/,
+            hashStr;
 
         if (!urlStr || urlStr.length === 0 || urlStr.indexOf('#') === -1) {
             return false;
         }
 
-        // extract hash component from url
-        const hashStr = urlStr.replace(/^[^#]+#+(.*)/, '$1');
+        //extract hash component from url
+        hashStr = urlStr.replace(/^[^#]+#+(.*)/, '$1');
 
         if (hashStr.length === 0) {
             return false;
         }
 
-        hashStr.split('&').forEach(keyPair => {
+        hashStr.split('&').forEach(function(keyPair) {
             if (keyPair && keyPair.match(keyPairRegEx)) {
                 valuesByKey[
                     keyPair.replace(keyPairRegEx, '$1')
@@ -26,27 +27,32 @@ var utils = {
         return valuesByKey[key] || false;
     },
 
-    getSwitchKeycodes: callback => {
-        chrome.runtime.sendMessage({ action: 'requestHotkeys' }, commands => {
-            // eslint-disable-next-line no-console
+    getSwitchKeycodes: function(callback) {
+        chrome.runtime.sendMessage({ action: 'requestHotkeys' }, function(
+            commands
+        ) {
             console.dir(commands);
 
-            const commandStr = commands.switchCode;
+            var commandStr = commands.switchCode,
+                keyStrArray,
+                curStr,
+                primaryModifier,
+                secondaryModifier,
+                mainKeyCode;
 
-            const keyStrArray = commandStr.split('+');
+            keyStrArray = commandStr.split('+');
 
-            // get keyStr of primary modifier
-            const primaryModifier = keyStrArray[0];
+            //get keyStr of primary modifier
+            primaryModifier = keyStrArray[0];
 
-            // get keyStr of secondary modifier
-            const secondaryModifier =
+            //get keyStr of secondary modifier
+            secondaryModifier =
                 keyStrArray.length === 3 ? keyStrArray[1] : false;
 
-            // get keycode of main key (last in array)
-            const curStr = keyStrArray[keyStrArray.length - 1];
+            //get keycode of main key (last in array)
+            curStr = keyStrArray[keyStrArray.length - 1];
 
-            // TODO: There's others. Period. Up Arrow etc.
-            let mainKeyCode;
+            //TODO: There's others. Period. Up Arrow etc.
             if (curStr === 'Space') {
                 mainKeyCode = 32;
             } else {
@@ -54,9 +60,9 @@ var utils = {
             }
 
             callback({
-                primaryModifier,
-                secondaryModifier,
-                mainKeyCode,
+                primaryModifier: primaryModifier,
+                secondaryModifier: secondaryModifier,
+                mainKeyCode: mainKeyCode,
             });
         });
     },
