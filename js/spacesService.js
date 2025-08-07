@@ -70,13 +70,153 @@
                         self.sessions.map(s => ({ id: s.id, name: s.name, windowId: s.windowId })));
 
                     //then try to match current open windows with saved sessions
+                    //use a more aggressive approach during initialization to handle Chrome restarts
                     windows.forEach(function(curWindow) {
                         if (!self.filterInternalWindows(curWindow)) {
                             self.checkForSessionMatch(curWindow);
                         }
                     });
+
+                    // Additional pass: if we still have unmatched closed sessions after first pass,
+                    // try fuzzy matching again with more relaxed criteria for Chrome restart scenarios
+                    self.performAggressiveSessionMatching(windows);
                 });
             });
+        },
+
+        // Aggressive session matching for Chrome restart scenarios
+        performAggressiveSessionMatching: function(windows) {
+            var self = this;
+            
+            // Find all unmatched closed sessions (sessions with no windowId)
+            var unmatchedSessions = this.sessions.filter(function(session) {
+                return session.id && !session.windowId && session.tabs && session.tabs.length > 0;
+            });
+
+            // Find all unmatched windows (windows with no named session)
+            var unmatchedWindows = windows.filter(function(window) {
+                if (self.filterInternalWindows(window)) {
+                    return false;
+                }
+                var session = self.getSessionByWindowId(window.id);
+                return !session || !session.id || !session.name;
+            });
+
+            if (unmatchedSessions.length === 0 || unmatchedWindows.length === 0) {
+                if (this.debug) {
+                    console.log('[SpacesService] Aggressive matching: no unmatched sessions or windows');
+                }
+                return;
+            }
+
+            if (this.debug) {
+                console.log('[SpacesService] Starting aggressive session matching:');
+                console.log('  - Unmatched sessions:', unmatchedSessions.length);
+                console.log('  - Unmatched windows:', unmatchedWindows.length);
+            }
+
+            // Try to match unmatched windows to unmatched sessions with relaxed criteria
+            unmatchedWindows.forEach(function(window) {
+                var bestMatch = self.findFuzzySessionMatchRelaxed(window.tabs, unmatchedSessions);
+                if (bestMatch) {
+                    if (self.debug) {
+                        console.log('[SpacesService] Aggressive match found - Session:', bestMatch.id, 
+                            'Name:', bestMatch.name, 'Window:', window.id);
+                    }
+                    
+                    // Remove any existing temporary session for this window
+                    var existingSession = self.getSessionByWindowId(window.id);
+                    if (existingSession && !existingSession.id) {
+                        var index = self.sessions.indexOf(existingSession);
+                        if (index !== -1) {
+                            self.sessions.splice(index, 1);
+                        }
+                    }
+                    
+                    self.matchSessionToWindow(bestMatch, window);
+                    
+                    // Remove matched session from unmatched list
+                    var sessionIndex = unmatchedSessions.indexOf(bestMatch);
+                    if (sessionIndex !== -1) {
+                        unmatchedSessions.splice(sessionIndex, 1);
+                    }
+                }
+            });
+        },
+
+        // More relaxed fuzzy matching specifically for aggressive session recovery
+        findFuzzySessionMatchRelaxed: function(currentTabs, candidateSessions) {
+            var self = this;
+            
+            if (!candidateSessions || candidateSessions.length === 0) {
+                return null;
+            }
+
+            // Extract meaningful URLs from current tabs
+            var currentUrls = currentTabs.map(function(tab) {
+                return self._cleanUrl(tab.url);
+            }).filter(function(url) {
+                return url && url.length > 0;
+            });
+
+            if (currentUrls.length === 0) {
+                return null;
+            }
+
+            var bestMatch = null;
+            var bestScore = 0;
+            var relaxedThreshold = 0.5; // More relaxed 50% threshold for aggressive matching
+
+            candidateSessions.forEach(function(session) {
+                var sessionUrls = session.tabs.map(function(tab) {
+                    return self._cleanUrl(tab.url);
+                }).filter(function(url) {
+                    return url && url.length > 0;
+                });
+
+                if (sessionUrls.length === 0) {
+                    return;
+                }
+
+                // Calculate Jaccard similarity (intersection over union)
+                var intersection = 0;
+                var union = currentUrls.slice(); // copy current URLs
+
+                currentUrls.forEach(function(currentUrl) {
+                    if (sessionUrls.indexOf(currentUrl) !== -1) {
+                        intersection++;
+                    }
+                });
+
+                sessionUrls.forEach(function(sessionUrl) {
+                    if (union.indexOf(sessionUrl) === -1) {
+                        union.push(sessionUrl);
+                    }
+                });
+
+                var jaccardScore = intersection / union.length;
+                
+                // Also calculate simple overlap score
+                var overlapScore = intersection / Math.min(currentUrls.length, sessionUrls.length);
+                
+                // Use the better of the two scores
+                var score = Math.max(jaccardScore, overlapScore);
+
+                if (self.debug) {
+                    console.log('[SpacesService] Relaxed fuzzy match candidate - Session:', session.id, 
+                        'Jaccard:', jaccardScore.toFixed(2), 
+                        'Overlap:', overlapScore.toFixed(2),
+                        'Final Score:', score.toFixed(2),
+                        'Intersection:', intersection);
+                }
+
+                if (score > bestScore && score >= relaxedThreshold) {
+                    bestScore = score;
+                    bestMatch = session;
+                }
+            });
+
+            return bestMatch;
         },
 
         resetAllSessionHashes: function(sessions) {
@@ -169,7 +309,7 @@
         },
 
         checkForSessionMatch: function(curWindow) {
-            var sessionHash, temporarySession, matchingSession;
+            var sessionHash, temporarySession, matchingSession, fuzzyMatch;
 
             if (!curWindow.tabs || curWindow.tabs.length === 0) {
                 return;
@@ -177,12 +317,29 @@
 
             sessionHash = this.generateSessionHash(curWindow.tabs);
             temporarySession = this.getSessionByWindowId(curWindow.id);
+            
+            // First try exact hash match
             matchingSession = this.getSessionBySessionHash(sessionHash, true);
+            
+            // If no exact match, try fuzzy matching for Chrome restart scenarios
+            if (!matchingSession) {
+                fuzzyMatch = this.findFuzzySessionMatch(curWindow.tabs);
+                if (fuzzyMatch) {
+                    if (this.debug)
+                        console.log(
+                            'fuzzy matching session found: ' +
+                                fuzzyMatch.id +
+                                '. linking with window: ' +
+                                curWindow.id
+                        );
+                    matchingSession = fuzzyMatch;
+                }
+            }
 
             if (matchingSession) {
-                if (this.debug)
+                if (this.debug && !fuzzyMatch)
                     console.log(
-                        'matching session found: ' +
+                        'exact matching session found: ' +
                             matchingSession.id +
                             '. linking with window: ' +
                             curWindow.id
@@ -204,6 +361,83 @@
             }
         },
 
+        // Fuzzy matching for Chrome restart scenarios where exact hash fails
+        findFuzzySessionMatch: function(currentTabs) {
+            var self = this;
+            var candidateSessions = this.sessions.filter(function(session) {
+                return session.id && !session.windowId && session.tabs && session.tabs.length > 0;
+            });
+
+            if (candidateSessions.length === 0) {
+                return null;
+            }
+
+            // Extract meaningful URLs from current tabs (filter out chrome://newtab/, etc)
+            var currentUrls = currentTabs.map(function(tab) {
+                return self._cleanUrl(tab.url);
+            }).filter(function(url) {
+                return url && url.length > 0;
+            });
+
+            if (currentUrls.length === 0) {
+                return null;
+            }
+
+            var bestMatch = null;
+            var bestScore = 0;
+            var minSimilarityThreshold = 0.7; // 70% of URLs must match
+
+            candidateSessions.forEach(function(session) {
+                var sessionUrls = session.tabs.map(function(tab) {
+                    return self._cleanUrl(tab.url);
+                }).filter(function(url) {
+                    return url && url.length > 0;
+                });
+
+                if (sessionUrls.length === 0) {
+                    return;
+                }
+
+                // Calculate similarity score
+                var matchCount = 0;
+                var totalUrls = Math.max(currentUrls.length, sessionUrls.length);
+
+                currentUrls.forEach(function(currentUrl) {
+                    if (sessionUrls.indexOf(currentUrl) !== -1) {
+                        matchCount++;
+                    }
+                });
+
+                var score = matchCount / totalUrls;
+
+                if (self.debug) {
+                    console.log('[SpacesService] Fuzzy match candidate - Session:', session.id, 
+                        'Score:', score.toFixed(2), 
+                        'Matches:', matchCount + '/' + totalUrls,
+                        'Current URLs:', currentUrls.length,
+                        'Session URLs:', sessionUrls.length);
+                }
+
+                // Require significant similarity and prefer sessions with exact tab count match
+                if (score > bestScore && score >= minSimilarityThreshold) {
+                    // Boost score if tab counts match exactly
+                    if (currentUrls.length === sessionUrls.length) {
+                        score *= 1.1;
+                    }
+                    
+                    bestScore = score;
+                    bestMatch = session;
+                }
+            });
+
+            if (bestMatch && this.debug) {
+                console.log('[SpacesService] Best fuzzy match found - Session:', bestMatch.id, 
+                    'Name:', bestMatch.name, 'Score:', bestScore.toFixed(2));
+            }
+
+            return bestMatch;
+        },
+
         matchSessionToWindow: function(session, curWindow) {
             var self = this;
             console.log('[SpacesService] Matching session to window - Session ID:', session.id, 'Window ID:', curWindow.id);
@@ -221,7 +455,7 @@
 
             //assign windowId to newly matched session
             session.windowId = curWindow.id;
-            session.lastAccess = new Date();
+            // Note: lastAccess is only updated when window is actually focused, not during session matching
             
             console.log('[SpacesService] Session matched - Session ID:', session.id, 'New windowId:', session.windowId);
             
@@ -257,6 +491,11 @@
 
             var sessionHash = this.generateSessionHash(curWindow.tabs);
 
+            // Set lastAccess to an older time so temporary sessions don't automatically appear at top
+            // They will only move to top when actually focused via handleWindowFocussed
+            var initialTime = new Date();
+            initialTime.setTime(initialTime.getTime() - (24 * 60 * 60 * 1000)); // 24 hours ago
+            
             this.sessions.push({
                 id: false,
                 windowId: curWindow.id,
@@ -264,7 +503,7 @@
                 name: false,
                 tabs: curWindow.tabs,
                 history: [],
-                lastAccess: new Date(),
+                lastAccess: initialTime,
             });
         },
 
@@ -423,6 +662,11 @@
             var session = this.getSessionByWindowId(windowId);
             if (session) {
                 session.lastAccess = new Date();
+                
+                // Save the session to persist the lastAccess time for proper ordering
+                if (session.id) {
+                    this.saveExistingSession(session.id);
+                }
             }
         },
 

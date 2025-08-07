@@ -763,58 +763,63 @@ var spaces = (function() {
     function createNewPopupWindow(popupUrl) {
         console.log('[SW] Creating new popup window');
         
-        // Get current display to position window in bottom right
-        chrome.system.display.getInfo((displays) => {
-            let targetDisplay = displays[0]; // Use primary display
+        // Get the currently active window to position popup relative to it
+        chrome.windows.getCurrent((currentWindow) => {
+            if (!currentWindow) {
+                console.log('[SW] No current window found, using fallback positioning');
+                // Fallback to screen positioning if no active window
+                chrome.system.display.getInfo((displays) => {
+                    const primaryDisplay = displays[0];
+                    const windowWidth = 310;
+                    const windowHeight = 450;
+                    const margin = 20;
+                    
+                    const left = primaryDisplay.bounds.left + primaryDisplay.bounds.width - windowWidth - margin;
+                    const top = primaryDisplay.bounds.top + primaryDisplay.bounds.height - windowHeight - margin;
+                    
+                    createPopupWindow(popupUrl, left, top, windowWidth, windowHeight);
+                });
+                return;
+            }
             
-            // Find the display that contains the currently focused window
-            chrome.windows.getCurrent((currentWindow) => {
-                if (currentWindow) {
-                    // Find which display contains the current window
-                    displays.forEach((display) => {
-                        if (currentWindow.left >= display.bounds.left && 
-                            currentWindow.left < display.bounds.left + display.bounds.width &&
-                            currentWindow.top >= display.bounds.top && 
-                            currentWindow.top < display.bounds.top + display.bounds.height) {
-                            targetDisplay = display;
-                        }
-                    });
-                }
-                
-                // Calculate bottom right position with 20px margins
-                const windowWidth = 310;
-                const windowHeight = 450;
-                const margin = 20;
-                
-                const left = targetDisplay.bounds.left + targetDisplay.bounds.width - windowWidth - margin;
-                const top = targetDisplay.bounds.top + targetDisplay.bounds.height - windowHeight - margin;
-                
-                console.log('[SW] Positioning popup at bottom right - left:', left, 'top:', top);
-                
-                chrome.windows.create(
-                    {
-                        type: 'popup',
-                        url: popupUrl,
-                        focused: true,
-                        height: windowHeight,
-                        width: windowWidth,
-                        top: top,
-                        left: left,
-                    },
-                    function(window) {
-                        if (chrome.runtime.lastError) {
-                            console.log('[SW] Error creating popup window:', chrome.runtime.lastError);
-                            return;
-                        }
-                        console.log('[SW] Popup window created with ID:', window.id);
-                        spacesPopupWindowId = window.id;
-                        
-                        // Set up a heartbeat to keep service worker alive while popup is open
-                        startPopupHeartbeat();
-                    }
-                );
-            });
+            // Calculate bottom right position relative to the active window with 20px margins
+            const windowWidth = 310;
+            const windowHeight = 450;
+            const margin = 20;
+            
+            const left = currentWindow.left + currentWindow.width - windowWidth - margin;
+            const top = currentWindow.top + currentWindow.height - windowHeight - margin;
+            
+            console.log('[SW] Positioning popup at bottom right of active window - left:', left, 'top:', top);
+            console.log('[SW] Active window bounds - left:', currentWindow.left, 'top:', currentWindow.top, 'width:', currentWindow.width, 'height:', currentWindow.height);
+            
+            createPopupWindow(popupUrl, left, top, windowWidth, windowHeight);
         });
+    }
+    
+    function createPopupWindow(popupUrl, left, top, width, height) {
+        chrome.windows.create(
+            {
+                type: 'popup',
+                url: popupUrl,
+                focused: true,
+                height: height,
+                width: width,
+                top: top,
+                left: left,
+            },
+            function(window) {
+                if (chrome.runtime.lastError) {
+                    console.log('[SW] Error creating popup window:', chrome.runtime.lastError);
+                    return;
+                }
+                console.log('[SW] Popup window created with ID:', window.id);
+                spacesPopupWindowId = window.id;
+                
+                // Set up a heartbeat to keep service worker alive while popup is open
+                startPopupHeartbeat();
+            }
+        );
     }
     
     // Keep service worker alive while popup window is open
@@ -1404,7 +1409,7 @@ var spaces = (function() {
                 // Update the session with current tab groups
                 session.tabGroups = tabGroups;
                 session.tabs = window.tabs; // Also update tabs in case they changed
-                session.lastAccess = new Date();
+                // Note: lastAccess is only updated when window is actually focused, not during tab updates
                 
                 console.log('[SW] 📝 About to save session with updated data...');
                 
@@ -1756,6 +1761,17 @@ var spaces = (function() {
                         });
                     }
                 });
+                
+                // After clearing stale windowIds, try to re-match windows to sessions
+                // This is crucial for Chrome restart scenarios
+                windows.forEach(function(curWindow) {
+                    if (!spacesService.filterInternalWindows(curWindow)) {
+                        spacesService.checkForSessionMatch(curWindow);
+                    }
+                });
+                
+                // Run aggressive matching to recover from Chrome restart scenarios
+                spacesService.performAggressiveSessionMatching(windows);
                 
                 if (debug) console.log('[SW] Session reinitialization complete. Sessions:', 
                     spacesService.sessions.map(s => ({ id: s.id, name: s.name, windowId: s.windowId })));
