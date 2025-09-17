@@ -833,10 +833,19 @@
             return result.length >= 1 ? result[0] : false;
         },
         getSessionByName: function(name) {
+            // Be defensive: backups from older versions may contain non-string names (e.g. false)
+            // Normalize the lookup target to a lowercase string; treat non-strings as empty
+            var target = (typeof name === 'string' ? name : '').toLowerCase();
+
+            if (target.length === 0) {
+                // Empty or invalid names should not match any named session
+                return false;
+            }
+
             var result = this.sessions.filter(function(session) {
                 return (
-                    session.name &&
-                    session.name.toLowerCase() === name.toLowerCase()
+                    typeof session.name === 'string' &&
+                    session.name.toLowerCase() === target
                 );
             });
             return result.length >= 1 ? result[0] : false;
